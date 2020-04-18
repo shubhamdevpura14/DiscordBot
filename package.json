@@ -1,0 +1,24 @@
+{
+  "name": "discord-scraper",
+  "version": "1.0.0",
+  "description": "A desktop app to scrape data from Discord, built with electronjs",
+  "main": "app.js",
+  "scripts": {
+    "start": "electron app.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Silveee/Discord-Scraper.git"
+  },
+  "author": "Silveee",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Silveee/Discord-Scraper/issues"
+  },
+  "homepage": "https://github.com/Silveee/Discord-Scraper#readme",
+  "dependencies": {
+    "discord.js": "^11.5.1",
+    "electron": "^8.0.0",
+    "exceljs": "^3.7.0"
+  }
+}

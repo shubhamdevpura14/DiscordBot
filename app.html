@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Discord Scraper</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+	<!-- Bootstrap CSS CDN -->
+	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.0/css/bootstrap.min.css" integrity="sha384-9gVQ4dYFwwWSjIDZnLEWnxCjeSWFphJiwGPXr1jddIhOegiu1FwO5qRGvFXOdJZ4" crossorigin="anonymous">
+	<!-- Our Custom CSS -->
+	<link rel="stylesheet" href="style.css">
+	<!-- Scrollbar Custom CSS -->
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/malihu-custom-scrollbar-plugin/3.1.5/jquery.mCustomScrollbar.min.css">
+
+	<!-- Font Awesome JS -->
+	<script defer src="https://use.fontawesome.com/releases/v5.0.13/js/solid.js" integrity="sha384-tzzSw1/Vo+0N5UhStP3bvwWPq+uvzCMfrN1fEFe+xBmv1C/AtVX5K0uZtmcHitFZ" crossorigin="anonymous"></script>
+	<script defer src="https://use.fontawesome.com/releases/v5.0.13/js/fontawesome.js" integrity="sha384-6OIrr52G08NpOFSZdxxz1xdNSndlD4vdcf/q2myIUVO0VsqaGHJsB0RaBE01VTOY" crossorigin="anonymous"></script>
+
+	<script>
+	const { ipcRenderer } = require('electron');
+	const bot = require("./src/bot")();
+	const utils = require("./src/utils");
+
+	document.addEventListener("click", require("./src/emoji")); // Emoji download event
+	document.addEventListener("click", require("./src/clone")); // Event to copy messages to another server
+
+	window.onload = function() {
+		// Handles mass deletion event
+		document.querySelector("#mass-delete").addEventListener('click', require("./src/mass-delete").bind(document));
+		// Event to export attachments
+		document.querySelector(".download-attachments").addEventListener("click", require("./src/attachments").bind(document));
+		// Event to export to excel
+		document.querySelector(".download-excel").addEventListener("click", require("./src/backup").bind(document));
+
+		document.querySelector("#refresh").addEventListener("click", () => {
+			let backup = document.querySelector("#section-backup .server-list"),
+				deletion = document.querySelector("#section-mass-delete .server-list");
+			backup.innerHTML = deletion.innerHTML = `<span class="blinking">Reloading...</span>`;
+			loadPage();
+		});
+		function loadPage() {
+			document.querySelector("#section-backup .server-list").innerHTML = "Refreshing list...";
+			document.querySelector("#section-mass-delete .server-list").innerHTML = "Refreshing list...";
+			let backupHTML = ``;
+			let deletionHTML = ``;
+			let modal = ``;
+			let manageableGuilds = [];
+			for (let [id, guild] of bot.guilds) {
+				if (guild.members.get(bot.user.id).hasPermission(0x800 | 0x10000 | 0x10)) {
+					modal += `<button data-dismiss="modal" class="btn btn-primary clone-to" value="${guild.id}">${guild.name}</button> `;
+				}
+				if (!guild.members.get(bot.user.id).hasPermission('READ_MESSAGE_HISTORY')) continue;
+
+				let backupDetails = `<details>
+					<summary>
+						<input class="guild" type="checkbox" value="${id}"> ${guild.name}
+					</summary>
+					<div class="guild-${id}">`;
+				let deletionDetails = backupDetails;
+
+				let userHTML = `<div class="users">
+					Filter by Users:<br />`;
+
+				for (let [, member] of guild.members) {
+					userHTML += `<input type="checkbox" value="${member.user.id}"> ${member.user.tag} `;
+				}
+				userHTML += '</div><br />';
+
+				backupDetails += userHTML;
+
+				let channelData = `<div class="channels">
+					Filter by Channels:<br />`;
+
+				for (let [, channel] of guild.channels) {
+					if (channel.type !== 'text' || !channel.members.has(bot.user.id)) continue;
+					channelData += `<input type="checkbox" value="${channel.id}" checked/> ${channel.name} `;
+				}
+				channelData += `</div>`;
+				
+				let emojiData = ``;
+				if (guild.emojis.size) {
+					emojiData += `<button class="download-emoji btn btn-primary" value="${id}">Download server emojis</button>`;
+					emojiData += `<div class="guild-${id} status"></div>`;
+				}
+				backupDetails += channelData + emojiData + `</div></details><br />`;
+				deletionDetails += channelData + `</div></details><br />`;
+
+				backupHTML += backupDetails;
+				deletionHTML += deletionDetails;
+			}
+			let dms = ``;
+			for (let [, channel] of bot.channels) {
+				if (channel.type === "dm") {
+					dms += `<input type="checkbox" value="${channel.id}"> ${channel.recipient.tag} `;
+				} else if (channel.type === "group") {
+					let name = `Group (${[...channel.recipients.values()].map(user => user.tag).join(", ")})`;
+					dms += `<input type="checkbox" value="${channel.id}"> ${name} `;
+				}
+			}
+			if (dms) {
+				dms = `<details>
+				<summary>
+					<input class="dmbox" type="checkbox"> Private Messages
+				</summary>
+				<div class="dms">${dms}</div>
+				</details><br />`
+				backupHTML += dms;
+				deletionHTML += dms;
+			}
+			document.querySelector("#section-backup .server-list").innerHTML = backupHTML;
+			document.querySelector("#section-mass-delete .server-list").innerHTML = deletionHTML;
+			if (modal) modal = `Choose a server you want to copy all the selected channels to:<br />` + modal;
+			else modal = `Your bot needs permissions to read chat history, post messages, and create new channels on at least one server for this feature to be useable.`;
+
+			document.querySelector("#section-backup .clone-server-list").innerHTML = modal;
+		}
+		document.querySelector(".show-backup").addEventListener('click', () => {
+			let backup = document.querySelector("#section-backup").style;
+			let deletion = document.querySelector("#section-mass-delete").style;
+			deletion.height = "0", deletion.width = "0", deletion.overflow = "hidden";
+			backup.height = "auto", backup.width = "auto", backup.overflow = "visible";
+		});
+		document.querySelector(".show-mass-delete").addEventListener('click', () => {
+			let backup = document.querySelector("#section-backup").style;
+			let deletion = document.querySelector("#section-mass-delete").style;
+			backup.height = "0", backup.width = "0", backup.overflow = "hidden";
+			deletion.height = "auto", deletion.width = "auto", deletion.overflow = "visible";
+		});
+		document.getElementById('logout').addEventListener('click', async event => {
+			const clickedButton = event.srcElement;
+			clickedButton.innerHTML = "Logging out...";
+			ipcRenderer.sendSync("logout");
+
+			clickedButton.innerHTML = "Error while logging out";
+			setTimeout(() => clickedButton.innerHTML = "Switch Bots", 1000);
+		});
+		document.querySelector(".login-button").addEventListener('click', async event => {
+			const token = document.querySelector(".login-overlay .form-control").value;
+			const statusBox = document.querySelector(".login-overlay .status");
+			if (!token) {
+				statusBox.innerHTML = "You didn't enter your bot token.";
+				return;
+			}
+
+			const clickedButton = event.srcElement;
+			const status = new utils.Status(clickedButton, statusBox, document);
+			status.waiting("Logging in...");
+			try {
+				await bot.login(token);
+				if (!bot.channels.size) {
+					await bot.destroy();
+					return status.error("Your bot needs to be in at least one server or have one DM.</span>");
+				}
+			} catch (err) {
+				let msg = err.message;
+				if (msg === "Failed to fetch") msg = "You are not connected to the Internet";
+				return status.error(msg);
+			}
+
+			document.querySelector("#welcome").innerHTML = "Welcome, " + bot.user.username;
+			loadPage();
+			document.querySelector(".login-overlay").style.display = "none";
+			document.querySelector(".login-overlay .form-control").value = "";
+			status.done();
+		});
+	}
+	</script>
+</head>
+<body>
+	<div class="login-overlay">
+		<div class="modal-dialog enter-token">
+			<div class="modal-content">
+				<div class="modal-body">
+					Enter your discord bot token:<br /><br />
+					<input class="form-control" type="text"/><br />
+					<button class="login-button">Submit</button><br />
+					<div class="status"><br /></div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<nav id="sidebar">
+		<div class="sidebar-header">
+			<h3>PYTHONMATE</h3>
+		</div>
+
+		<ul class="list-unstyled components">
+			<p id="welcome">Dashboard</p>
+			<li>
+				<span class="show-backup">Back Up</span>
+			</li>
+			<li>
+				<span class="show-mass-delete">Delete Messages</span>
+			</li>
+		</ul>
+
+		<ul class="list-unstyled CTAs">
+			<li>
+				<button id="logout">Switch Bots</button>
+			</li>
+		</ul>
+	</nav>
+	<div id="content">
+	<button id="refresh" class="btn btn-primary">Refresh</button><br /><br />
+	<div id="section-backup">
+		<div class="server-list">
+		</div>
+		<div class="filter-section">
+			<details>
+				<summary>
+					<input class="more-filters" type="checkbox" checked>More Filters:
+				</summary>
+				<div class="more-filters">
+					<div class="date-between">
+						<input type="radio" name="date-choice" class="date-choice" value="date-between"/>
+						Between <input class="from" type="date" value="" /> and <input class="to" type="date" value="" />
+					</div>
+
+					<div class="date-before">
+						<input type="radio" name="date-choice" class="date-choice" value="date-before"/>
+						Before <input class="to" type="date" value="" />
+					</div>
+
+					<div class="date-after">
+						<input type="radio" name="date-choice" class="date-choice" value="date-after"/>
+						After <input class="from" type="date" value="" />
+					</div>
+
+					<div>
+						<input type="checkbox" class="limit-checkbox"/>
+						Limit to last <input type="number" class="limit-number"/> messages/attachments per channel
+					</div>
+				</div>
+			</details>
+		</div>
+
+		<button class="btn btn-primary download-excel">Download as Excel</button>
+		<div id="excel-status" class="status"></div><br />
+		<button class="btn btn-primary download-attachments">Download Attachments</button>
+		<div id="attachment-status" class="status"></div><br />
+		<button data-toggle="modal" data-target="#clone-confirmation" class="btn btn-primary backup-to-server">Send to another server</button>
+		<div id="clone-status" class="status"></div><br />
+
+		<div class="modal fade" tabindex="-1" role="dialog" id="clone-confirmation" aria-hidden="true">
+			<div class="modal-dialog" role="document">
+				<div class="modal-content">
+					<div class="modal-body">
+						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+							<span aria-hidden="true">&times;</span>
+						</button>
+						<div class="clone-server-list"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<div id="section-mass-delete">
+		<div class="server-list">
+
+		</div>
+		<button data-toggle="modal" data-target="#mass-delete-confirmation" class="btn btn-primary mass-delete-popup">Delete bot messages</button>
+		<div class="modal fade" tabindex="-1" role="dialog" id="mass-delete-confirmation" aria-hidden="true">
+			<div class="modal-dialog" role="document">
+				<div class="modal-content">
+					<div class="modal-header">
+						<h5 class="modal-title">Confirmation</h5>
+						<button type="button" class="close" data-dismiss="modal" aria-label="Close">
+							<span aria-hidden="true">&times;</span>
+						</button>
+					</div>
+					<div class="modal-body">
+						This will delete all of the bot's messages from the selected channels and private messages. Are you sure you want to continue?
+					</div>
+					<div class="modal-footer">
+						<button type="button" data-dismiss="modal" id="mass-delete" class="btn btn-primary">YES</button>
+						<button type="button" class="btn btn-primary" data-dismiss="modal">NO</button>
+					</div>
+				</div>
+			</div>
+		</div>
+		<div id="deletion-status" class="status"></div>
+	</div>
+	<div id="notes" class="status"></div>
+	</div>
+	<!-- Popper.JS -->
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.14.0/umd/popper.min.js" integrity="sha384-cs/chFZiN24E4KMATLdqdvsezGxaGsi4hLGOzlXwp5UZB1LY//20VyM2taTB4QvJ" crossorigin="anonymous"></script>
+	<!-- Bootstrap JS -->
+	<script type="text/javascript" src="https://cdn.jsdelivr.net/npm/bootstrap.native@2.0.27/dist/bootstrap-native-v4.min.js"></script>
+</body>
+</html>
