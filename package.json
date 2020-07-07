@@ -18,7 +18,7 @@
   "homepage": "https://github.com/Silveee/Discord-Scraper#readme",
   "dependencies": {
     "discord.js": "^11.5.1",
-    "electron": "^8.0.0",
+    "electron": "^8.2.4",
     "exceljs": "^3.7.0"
   }
 }
